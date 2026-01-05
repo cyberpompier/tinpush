@@ -22,8 +22,20 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete }) => {
   const handleNext = () => {
     if (step < 3) setStep(step + 1);
     else {
+      // Generate a UUID for the user ID to match Supabase database schema
+      let newId;
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        newId = crypto.randomUUID();
+      } else {
+        // Fallback UUID v4 generator for older browsers
+        newId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      }
+
       onComplete({
-        id: 'user-' + Date.now(),
+        id: newId,
         name: formData.name || 'Utilisateur',
         age: formData.age || 18,
         bio: formData.bio || 'Nouvel utilisateur sur Aura',

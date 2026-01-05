@@ -79,11 +79,31 @@ export async function subscribeToPushNotifications() {
     throw new Error('Échec de la génération des clés de chiffrement Push.');
   }
 
-  // 7. Save to Supabase (Upsert based on endpoint usually better, but insert is fine for now)
-  // We identify user by localStorage ID if available, otherwise anonymous
+  // 7. Validate and prepare User ID
+  // The table expects 'user_id' as a UUID or null. 
+  // We identify user by localStorage ID if available.
   const userProfileStr = localStorage.getItem('aura_profile');
-  const userId = userProfileStr ? JSON.parse(userProfileStr).id : 'anon';
+  let userId: string | null = null;
 
+  if (userProfileStr) {
+    try {
+      const parsed = JSON.parse(userProfileStr);
+      // Validate if parsed.id is a UUID to avoid "invalid input syntax for type uuid" error
+      // Regex for UUID v4 (or generally UUID format)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      
+      if (parsed.id && uuidRegex.test(parsed.id)) {
+        userId = parsed.id;
+      } else {
+        console.warn("User ID found in storage is not a valid UUID. Saving subscription as anonymous to match DB schema.");
+      }
+    } catch (e) {
+      console.error("Failed to parse user profile from localStorage", e);
+    }
+  }
+
+  // 8. Save to Supabase using the existing table structure:
+  // id (uuid pk), user_id (uuid nullable), endpoint (text), p256dh (text), auth (text), created_at
   const { error } = await supabase
     .from('push_subscriptions')
     .insert({
@@ -95,11 +115,9 @@ export async function subscribeToPushNotifications() {
 
   if (error) {
     console.error('Error saving subscription to Supabase:', error);
-    // Note: We don't throw here to avoid telling the user it failed if only the DB save failed 
-    // (though strictly speaking the backend won't know about it).
-    // Let's assume duplications might cause errors, so we log but consider success locally.
-    if (error.code !== '23505') { // Ignore unique constraint violations
-        throw new Error("Erreur de sauvegarde base de données.");
+    // 23505 is unique violation code in Postgres, safe to ignore for duplicate subscriptions
+    if (error.code !== '23505') { 
+        throw new Error("Erreur de sauvegarde base de données: " + error.message);
     }
   }
 
