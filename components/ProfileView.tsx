@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Profile } from '../types';
 import { subscribeToPushNotifications } from '../push';
+import { supabase } from '../lib/supabase';
 
 interface ProfileViewProps {
   profile: Profile;
@@ -22,6 +23,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
 
   // Notification state
   const [isNotifLoading, setIsNotifLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [notifTitle, setNotifTitle] = useState("Nouveau Match !");
+  const [notifBody, setNotifBody] = useState("Quelqu'un a liké votre profil Aura ✨");
 
   // Auto-scroll carousel every 5 seconds for the edit view
   useEffect(() => {
@@ -126,6 +130,52 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
     }
   };
 
+  // Test Local (navigateur -> navigateur)
+  const sendTestNotificationLocal = async () => {
+    if (Notification.permission === 'granted') {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(notifTitle, {
+          body: notifBody,
+          icon: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f496.png',
+          badge: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f496.png',
+          vibrate: [100, 50, 100],
+          data: { url: '/' }
+        } as any);
+      } catch (e) {
+        console.error(e);
+        alert("Erreur SW Local");
+      }
+    } else {
+      alert("Activez les notifications d'abord.");
+    }
+  };
+
+  // Test Réel (Frontend -> Edge Function -> WebPush -> Navigateur)
+  const sendTestNotificationServer = async () => {
+    setIsSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-push', {
+        body: {
+          user_id: profile.id,
+          title: notifTitle,
+          body: notifBody,
+          url: window.location.origin
+        }
+      });
+
+      if (error) throw error;
+      
+      console.log("Résultat serveur:", data);
+      alert("Envoyé au serveur ! Si vous êtes abonné, vous devriez la recevoir dans quelques secondes.");
+    } catch (e: any) {
+      console.error("Erreur serveur:", e);
+      alert(`Erreur serveur: ${e.message || 'Impossible de joindre la fonction Edge'}`);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto bg-slate-50 animate-fadeIn scrollbar-hide relative">
       {/* Carousel Header (Edition) */}
@@ -210,6 +260,50 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
           )}
           Activer les notifications
         </button>
+
+        {/* Zone de test Notification */}
+        <section className="pt-2">
+          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-2">Tester les Notifications</h3>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-3">
+            <div className="space-y-1">
+              <label className="text-[9px] font-bold text-slate-400 uppercase">Titre</label>
+              <input 
+                type="text" 
+                value={notifTitle}
+                onChange={(e) => setNotifTitle(e.target.value)}
+                placeholder="Titre de la notif"
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold focus:border-rose-300 outline-none transition-colors"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-bold text-slate-400 uppercase">Message</label>
+              <textarea 
+                value={notifBody}
+                onChange={(e) => setNotifBody(e.target.value)}
+                placeholder="Message..."
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs resize-none focus:border-rose-300 outline-none transition-colors"
+                rows={2}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={sendTestNotificationLocal}
+                className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 active:scale-95 transition-all"
+              >
+                <i className="fas fa-laptop-code"></i>
+                Local (Test UI)
+              </button>
+              <button 
+                onClick={sendTestNotificationServer}
+                disabled={isSending}
+                className="flex-1 py-3 rounded-xl bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-900 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isSending ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-cloud-bolt"></i>}
+                Serveur (Vrai)
+              </button>
+            </div>
+          </div>
+        </section>
 
         {/* Photo Management Section */}
         <section className="space-y-3">
