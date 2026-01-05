@@ -80,8 +80,6 @@ export async function subscribeToPushNotifications() {
   }
 
   // 7. Validate and prepare User ID
-  // The table expects 'user_id' as a UUID or null. 
-  // We identify user by localStorage ID if available.
   const userProfileStr = localStorage.getItem('aura_profile');
   let userId: string | null = null;
 
@@ -89,7 +87,6 @@ export async function subscribeToPushNotifications() {
     try {
       const parsed = JSON.parse(userProfileStr);
       // Validate if parsed.id is a UUID to avoid "invalid input syntax for type uuid" error
-      // Regex for UUID v4 (or generally UUID format)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       
       if (parsed.id && uuidRegex.test(parsed.id)) {
@@ -102,8 +99,7 @@ export async function subscribeToPushNotifications() {
     }
   }
 
-  // 8. Save to Supabase using the existing table structure:
-  // id (uuid pk), user_id (uuid nullable), endpoint (text), p256dh (text), auth (text), created_at
+  // 8. Save to Supabase using the existing table structure
   const { error } = await supabase
     .from('push_subscriptions')
     .insert({
@@ -115,6 +111,12 @@ export async function subscribeToPushNotifications() {
 
   if (error) {
     console.error('Error saving subscription to Supabase:', error);
+    
+    // Check specifically for RLS policy violation
+    if (error.code === '42501' || error.message.includes('row-level security')) {
+      throw new Error("Accès refusé par la base de données (RLS). Une politique d'insertion 'public' est requise sur la table push_subscriptions.");
+    }
+
     // 23505 is unique violation code in Postgres, safe to ignore for duplicate subscriptions
     if (error.code !== '23505') { 
         throw new Error("Erreur de sauvegarde base de données: " + error.message);
