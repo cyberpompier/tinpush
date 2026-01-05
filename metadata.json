@@ -1,0 +1,7 @@
+{
+  "name": "Aura - Rencontres Intelligentes",
+  "description": "Une application de rencontre moderne utilisant l'IA pour créer des connexions plus profondes grâce à l'analyse de personnalité et des brise-glaces personnalisés.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
