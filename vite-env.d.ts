@@ -50,14 +50,15 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
-// Support for process.env injected by vite.config.ts
-declare var process: {
-  env: {
-    readonly [key: string]: string | undefined;
+// Augment the global ProcessEnv interface to include our environment variables.
+// This avoids redeclaring 'process' which causes conflicts with @types/node.
+declare namespace NodeJS {
+  interface ProcessEnv {
     readonly NODE_ENV: string;
     readonly API_KEY?: string;
     readonly VAPID_PUBLIC_KEY?: string;
     readonly NEXT_PUBLIC_SUPABASE_URL?: string;
     readonly NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
+    [key: string]: string | undefined;
   }
-};
+}

@@ -117,10 +117,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
     setIsNotifLoading(true);
     try {
       await subscribeToPushNotifications();
-      alert("Notifications activées !");
-    } catch (error) {
+      alert("Notifications activées avec succès !");
+    } catch (error: any) {
       console.error(error);
-      alert("Erreur lors de l'activation des notifications.");
+      alert(`Erreur : ${error.message}`);
     } finally {
       setIsNotifLoading(false);
     }
