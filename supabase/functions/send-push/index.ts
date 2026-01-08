@@ -54,36 +54,42 @@ serve(async (req) => {
       icon: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f496.png'
     })
 
-    const promises = subscriptions.map(async (sub) => {
+    const results = await Promise.all(subscriptions.map(async (sub) => {
       try {
-        // VÉRIFICATION CRITIQUE : Si l'endpoint ou les clés sont manquants, on ignore cet abonnement
-        if (!sub.endpoint || !sub.p256dh || !sub.auth) {
-          console.warn(`Abonnement invalide ignoré (ID: ${sub.id})`)
-          return { success: false, id: sub.id, error: 'Missing endpoint or keys' }
+        // Validation stricte des données
+        if (!sub.endpoint || typeof sub.endpoint !== 'string' || sub.endpoint.trim() === '') {
+          console.warn(`Abonnement ${sub.id} invalide : endpoint manquant ou invalide`);
+          return { success: false, id: sub.id, error: 'Invalid endpoint' };
+        }
+        
+        if (!sub.p256dh || !sub.auth) {
+          console.warn(`Abonnement ${sub.id} invalide : clés manquantes`);
+          return { success: false, id: sub.id, error: 'Missing keys' };
         }
 
         const pushSubscription = {
-          endpoint: sub.endpoint,
+          endpoint: sub.endpoint.trim(),
           keys: {
-            p256dh: sub.p256dh,
-            auth: sub.auth,
+            p256dh: sub.p256dh.trim(),
+            auth: sub.auth.trim(),
           },
+        };
+        
+        await webpush.sendNotification(pushSubscription, notificationPayload);
+        return { success: true, id: sub.id };
+        
+      } catch (error: any) {
+        // Gestion spécifique des erreurs 410 (Gone) et 404 (Not Found) -> Suppression de la DB
+        if (error.statusCode === 410 || error.statusCode === 404) {
+          console.log(`Suppression de l'abonnement expiré : ${sub.id}`);
+          await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
+          return { success: false, id: sub.id, error: 'Expired subscription removed' };
         }
         
-        await webpush.sendNotification(pushSubscription, notificationPayload)
-        return { success: true, id: sub.id }
-      } catch (error: any) {
-        // Si l'abonnement est expiré (410 Gone ou 404), on le supprime de la base
-        if (error.statusCode === 410 || error.statusCode === 404) {
-          await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id)
-          return { success: false, id: sub.id, error: 'Expired subscription removed' }
-        }
-        console.error('Error sending push for sub ' + sub.id + ':', error)
-        return { success: false, id: sub.id, error: error.message || 'Unknown error' }
+        console.error(`Erreur d'envoi pour ${sub.id}:`, error);
+        return { success: false, id: sub.id, error: error.message || 'Unknown send error' };
       }
-    })
-
-    const results = await Promise.all(promises)
+    }));
 
     return new Response(JSON.stringify({ success: true, results }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

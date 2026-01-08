@@ -103,22 +103,39 @@ export async function subscribeToPushNotifications() {
     }
   }
 
-  // 8. Save to Supabase using upsert to update existing subscription if it exists
+  // 8. Save to Supabase
+  // STRATÉGIE ROBUSTE : Suppression préalable pour éviter les conflits (23505) puis insertion propre
+  if (userId) {
+    const { error: deleteError } = await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', userId);
+      
+    if (deleteError) {
+      console.warn("Erreur lors du nettoyage de l'ancien abonnement (peut être ignoré):", deleteError);
+    }
+  }
+
   const { error } = await supabase
     .from('push_subscriptions')
-    .upsert({
+    .insert({
       user_id: userId,
       endpoint: endpoint,
       p256dh: subscriptionJson.keys.p256dh,
       auth: subscriptionJson.keys.auth
-    }, { onConflict: 'user_id' });
+    });
 
   if (error) {
     console.error('Error saving subscription to Supabase:', error);
     
-    // Check specifically for RLS policy violation
     if (error.code === '42501' || error.message.includes('row-level security')) {
-      throw new Error("Accès refusé par la base de données (RLS). Une politique d'insertion 'public' est requise sur la table push_subscriptions.");
+      throw new Error("Accès refusé par la base de données (RLS). Vérifiez les politiques.");
+    }
+    
+    // Si c'est encore une duplication (race condition), on considère que c'est OK
+    if (error.code === '23505') {
+       console.log("Abonnement déjà existant (race condition), succès implicite.");
+       return subscription;
     }
 
     throw new Error("Erreur de sauvegarde base de données: " + error.message);
