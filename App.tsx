@@ -12,10 +12,34 @@ import BottomNav from './components/BottomNav';
 const App: React.FC = () => {
   // --- Persistent State Initialization ---
 
-  // Check for existing profile
+  // Check for existing profile and validate ID format
   const [userProfile, setUserProfile] = useState<Profile | null>(() => {
     const saved = localStorage.getItem('aura_profile');
-    return saved ? JSON.parse(saved) : null;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Regex to validate UUID format (Supabase requirement)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        
+        if (parsed.id && uuidRegex.test(parsed.id)) {
+          return parsed;
+        } else {
+          console.warn("Profil détecté avec un ID invalide (non-UUID). Réinitialisation pour compatibilité base de données.");
+        }
+      } catch (e) {
+        console.error("Erreur parsing profil:", e);
+      }
+    }
+    
+    // If we reach here, either no profile or invalid ID. 
+    // Clear legacy data to ensure clean state.
+    localStorage.removeItem('aura_profile');
+    // Optional: Clear matches/chats if they are bound to the specific user ID logic
+    // localStorage.removeItem('aura_swiped'); 
+    // localStorage.removeItem('aura_matches');
+    // localStorage.removeItem('aura_chats');
+    
+    return null;
   });
 
   const [currentView, setCurrentView] = useState<View>('discover');

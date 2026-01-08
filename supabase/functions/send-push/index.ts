@@ -19,6 +19,16 @@ serve(async (req) => {
     const { user_id, title, body, url } = await req.json()
     console.log(`Sending push to user: ${user_id}`);
 
+    // VALIDATION UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!user_id || !uuidRegex.test(user_id)) {
+      console.error(`Invalid UUID format: ${user_id}`);
+      return new Response(JSON.stringify({ error: `Invalid user_id format: "${user_id}". Must be a valid UUID.` }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }
+
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -37,7 +47,7 @@ serve(async (req) => {
 
     if (dbError) {
       console.error("DB Error:", dbError);
-      throw new Error(dbError.message)
+      throw new Error(`DB Error: ${dbError.message}`)
     }
 
     if (!subscriptions || subscriptions.length === 0) {
