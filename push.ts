@@ -103,15 +103,15 @@ export async function subscribeToPushNotifications() {
     }
   }
 
-  // 8. Save to Supabase using the existing table structure
+  // 8. Save to Supabase using upsert to update existing subscription if it exists
   const { error } = await supabase
     .from('push_subscriptions')
-    .insert({
+    .upsert({
       user_id: userId,
       endpoint: endpoint,
       p256dh: subscriptionJson.keys.p256dh,
       auth: subscriptionJson.keys.auth
-    });
+    }, { onConflict: 'user_id' });
 
   if (error) {
     console.error('Error saving subscription to Supabase:', error);
@@ -121,10 +121,7 @@ export async function subscribeToPushNotifications() {
       throw new Error("Accès refusé par la base de données (RLS). Une politique d'insertion 'public' est requise sur la table push_subscriptions.");
     }
 
-    // 23505 is unique violation code in Postgres, safe to ignore for duplicate subscriptions
-    if (error.code !== '23505') { 
-        throw new Error("Erreur de sauvegarde base de données: " + error.message);
-    }
+    throw new Error("Erreur de sauvegarde base de données: " + error.message);
   }
 
   console.log('Successfully subscribed to push notifications!');

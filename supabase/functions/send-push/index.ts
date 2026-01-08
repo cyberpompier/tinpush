@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import webpush from "npm:web-push"
@@ -54,13 +55,13 @@ serve(async (req) => {
     })
 
     const promises = subscriptions.map(async (sub) => {
-      // VÉRIFICATION CRITIQUE : Si l'endpoint ou les clés sont manquants, on ignore cet abonnement
-      if (!sub.endpoint || !sub.p256dh || !sub.auth) {
-        console.warn(`Abonnement invalide ignoré (ID: ${sub.id})`)
-        return { success: false, id: sub.id, error: 'Missing endpoint or keys' }
-      }
-
       try {
+        // VÉRIFICATION CRITIQUE : Si l'endpoint ou les clés sont manquants, on ignore cet abonnement
+        if (!sub.endpoint || !sub.p256dh || !sub.auth) {
+          console.warn(`Abonnement invalide ignoré (ID: ${sub.id})`)
+          return { success: false, id: sub.id, error: 'Missing endpoint or keys' }
+        }
+
         const pushSubscription = {
           endpoint: sub.endpoint,
           keys: {
@@ -72,13 +73,13 @@ serve(async (req) => {
         await webpush.sendNotification(pushSubscription, notificationPayload)
         return { success: true, id: sub.id }
       } catch (error: any) {
-        // Si l'abonnement est expiré (410 Gone), on le supprime de la base
+        // Si l'abonnement est expiré (410 Gone ou 404), on le supprime de la base
         if (error.statusCode === 410 || error.statusCode === 404) {
           await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id)
           return { success: false, id: sub.id, error: 'Expired subscription removed' }
         }
-        console.error('Error sending push:', error)
-        return { success: false, id: sub.id, error: error.message }
+        console.error('Error sending push for sub ' + sub.id + ':', error)
+        return { success: false, id: sub.id, error: error.message || 'Unknown error' }
       }
     })
 
@@ -90,7 +91,8 @@ serve(async (req) => {
     })
 
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Global error in send-push:', error)
+    return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     })
