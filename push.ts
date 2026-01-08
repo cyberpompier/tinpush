@@ -67,22 +67,38 @@ export async function subscribeToPushNotifications() {
   const registration = await navigator.serviceWorker.ready;
 
   // 5. Subscribe
-  let subscription;
-  try {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-    });
-  } catch (err: any) {
-    console.error('Erreur technique lors de la souscription Push:', err);
-    throw new Error(`Erreur de souscription: ${err.message}`);
+  let subscription = await registration.pushManager.getSubscription();
+  
+  if (!subscription) {
+     console.log("No existing subscription, creating new one...");
+     try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+      } catch (err: any) {
+        console.error('Erreur technique lors de la souscription Push:', err);
+        throw new Error(`Erreur de souscription: ${err.message}`);
+      }
+  } else {
+    console.log("Found existing subscription.");
   }
 
   // 6. Prepare data for Supabase
   const subscriptionJson = subscription.toJSON();
   const endpoint = subscriptionJson.endpoint || subscription.endpoint;
+  const p256dh = subscriptionJson.keys?.p256dh;
+  const auth = subscriptionJson.keys?.auth;
 
-  if (!endpoint || !subscriptionJson.keys || !subscriptionJson.keys.p256dh || !subscriptionJson.keys.auth) {
+  // LOG FOR DIAGNOSIS
+  console.log("Preparing to save subscription to DB:", {
+     endpoint: endpoint ? 'OK (Present)' : 'MISSING',
+     p256dh: p256dh ? 'OK (Present)' : 'MISSING',
+     auth: auth ? 'OK (Present)' : 'MISSING',
+     raw: subscriptionJson
+  });
+
+  if (!endpoint || !p256dh || !auth) {
     console.error("Subscription Data Incomplete:", subscriptionJson);
     throw new Error('Échec de la génération des clés de chiffrement Push (Endpoint ou clés manquants).');
   }
@@ -124,8 +140,8 @@ export async function subscribeToPushNotifications() {
           .from('push_subscriptions')
           .update({
             endpoint: endpoint,
-            p256dh: subscriptionJson.keys.p256dh,
-            auth: subscriptionJson.keys.auth
+            p256dh: p256dh,
+            auth: auth
           })
           .eq('id', existingId);
         error = updateError;
@@ -137,8 +153,8 @@ export async function subscribeToPushNotifications() {
           .insert({
             user_id: userId,
             endpoint: endpoint,
-            p256dh: subscriptionJson.keys.p256dh,
-            auth: subscriptionJson.keys.auth
+            p256dh: p256dh,
+            auth: auth
           });
         error = insertError;
       }

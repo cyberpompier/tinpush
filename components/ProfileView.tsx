@@ -26,6 +26,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
   const [isSending, setIsSending] = useState(false);
   const [notifTitle, setNotifTitle] = useState("Nouveau Match !");
   const [notifBody, setNotifBody] = useState("Quelqu'un a liké votre profil Aura ✨");
+  
+  // Diagnostic State
+  const [debugSub, setDebugSub] = useState<any>(null);
 
   // Auto-scroll carousel every 5 seconds for the edit view
   useEffect(() => {
@@ -35,6 +38,19 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
     }, 5000);
     return () => clearInterval(interval);
   }, [profile.images.length, showPreview, isCameraOpen]);
+
+  // Load diagnostic info
+  const loadSubscriptionInfo = async () => {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      setDebugSub(sub ? sub.toJSON() : "Aucune souscription active sur ce navigateur");
+    }
+  };
+
+  useEffect(() => {
+    loadSubscriptionInfo();
+  }, []);
 
   const handleAddImages = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -121,12 +137,27 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
     setIsNotifLoading(true);
     try {
       await subscribeToPushNotifications();
+      await loadSubscriptionInfo(); // Reload debug info
       alert("Notifications activées avec succès !");
     } catch (error: any) {
       console.error(error);
       alert(`Erreur : ${error.message}`);
     } finally {
       setIsNotifLoading(false);
+    }
+  };
+  
+  const resetSubscription = async () => {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await sub.unsubscribe();
+        alert("Désabonnement local effectué. Cliquez sur 'Activer' pour générer une nouvelle clé.");
+        loadSubscriptionInfo();
+      } else {
+        alert("Aucun abonnement à supprimer.");
+      }
     }
   };
 
@@ -321,6 +352,33 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
                     Test Serveur
                 </button>
             </div>
+        </div>
+
+        {/* Diagnostic Panel */}
+        <div className="bg-slate-800 rounded-3xl p-6 space-y-3 text-white">
+           <div className="flex justify-between items-center">
+             <h3 className="font-bold text-slate-400 text-xs uppercase tracking-widest">Diagnostic Données</h3>
+             <button onClick={loadSubscriptionInfo} className="text-xs text-rose-400 hover:text-rose-300">
+               <i className="fas fa-sync"></i> Refresh
+             </button>
+           </div>
+           
+           <div className="bg-slate-900 rounded-xl p-3 max-h-40 overflow-auto border border-slate-700">
+             <pre className="text-[10px] font-mono whitespace-pre-wrap text-green-400 break-all">
+               {debugSub ? JSON.stringify(debugSub, null, 2) : "Chargement..."}
+             </pre>
+           </div>
+           
+           <button 
+             onClick={resetSubscription}
+             className="w-full py-2 bg-red-500/20 text-red-300 border border-red-500/50 rounded-xl text-xs font-bold hover:bg-red-500/30 transition-colors"
+           >
+             <i className="fas fa-trash mr-2"></i>
+             Forcer Désabonnement (Reset)
+           </button>
+           <p className="text-[10px] text-slate-500 italic">
+             Si "endpoint" est null ci-dessus, cliquez sur Reset puis "Activer les notifications".
+           </p>
         </div>
 
         {/* Photo Gallery Manager */}

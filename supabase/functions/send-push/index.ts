@@ -11,8 +11,6 @@ declare const Deno: {
 };
 
 // FIX CRITIQUE: Gestion de la compatibilité des imports CommonJS/ESM dans Deno
-// Cela assure que 'webpush' pointe bien vers l'objet contenant les méthodes,
-// peu importe comment Deno résout le module npm.
 const webpush = _webpush.default || _webpush;
 
 const corsHeaders = {
@@ -96,6 +94,11 @@ serve(async (req) => {
     // 5. Envoi des notifications
     for (const sub of subscriptions) {
       try {
+        // --- DIAGNOSTIC LOGGING START ---
+        console.log(`[Push] Processing subscription ID: ${sub.id}`);
+        console.log(`[Push] Raw DB Record:`, JSON.stringify(sub));
+        // --- DIAGNOSTIC LOGGING END ---
+
         // Extraction et nettoyage des données
         let endpoint = (sub.endpoint || "").trim();
         let p256dh = (sub.p256dh || "").trim();
@@ -103,19 +106,20 @@ serve(async (req) => {
         
         // Support pour l'ancien format (JSON column 'keys') si les colonnes directes sont vides
         if ((!p256dh || !auth) && sub.keys && typeof sub.keys === 'object') {
+             console.log(`[Push] Using fallback 'keys' JSON column`);
              p256dh = (sub.keys.p256dh || "").trim();
              auth = (sub.keys.auth || "").trim();
         }
 
         // Validation stricte des champs requis par web-push AVANT de construire l'objet
         if (!endpoint) {
-          console.warn(`[Push] Skipping sub ${sub.id}: No endpoint found`);
+          console.warn(`[Push] SKIPPING: No endpoint found for ID ${sub.id}`);
           results.push({ success: false, id: sub.id, error: 'Missing endpoint' });
           continue;
         }
 
         if (!p256dh || !auth) {
-           console.warn(`[Push] Skipping sub ${sub.id}: Missing keys (p256dh or auth)`);
+           console.warn(`[Push] SKIPPING: Missing keys for ID ${sub.id}. p256dh: ${!!p256dh}, auth: ${!!auth}`);
            results.push({ success: false, id: sub.id, error: 'Missing keys' });
            continue;
         }
@@ -128,6 +132,10 @@ serve(async (req) => {
             auth: auth
           }
         };
+
+        // --- DIAGNOSTIC LOGGING FOR WEBPUSH ---
+        console.log(`[Push] Sending to WebPush with object:`, JSON.stringify(pushSubscription));
+        // --------------------------------------
 
         // Envoi via web-push
         await webpush.sendNotification(pushSubscription, notificationPayload);
