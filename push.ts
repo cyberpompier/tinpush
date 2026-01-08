@@ -74,8 +74,6 @@ export async function subscribeToPushNotifications() {
 
   // 6. Prepare data for Supabase
   const subscriptionJson = subscription.toJSON();
-  
-  // Correction: On s'assure d'avoir l'endpoint, soit depuis le JSON, soit depuis l'objet direct
   const endpoint = subscriptionJson.endpoint || subscription.endpoint;
 
   if (!endpoint || !subscriptionJson.keys || !subscriptionJson.keys.p256dh || !subscriptionJson.keys.auth) {
@@ -90,55 +88,64 @@ export async function subscribeToPushNotifications() {
   if (userProfileStr) {
     try {
       const parsed = JSON.parse(userProfileStr);
-      // Validate if parsed.id is a UUID to avoid "invalid input syntax for type uuid" error
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      
       if (parsed.id && uuidRegex.test(parsed.id)) {
         userId = parsed.id;
-      } else {
-        console.warn("User ID found in storage is not a valid UUID. Saving subscription as anonymous to match DB schema.");
       }
     } catch (e) {
       console.error("Failed to parse user profile from localStorage", e);
     }
   }
 
-  // 8. Save to Supabase
-  // STRATÉGIE ROBUSTE : Suppression préalable pour éviter les conflits (23505) puis insertion propre
+  // 8. Save to Supabase (Manual Update/Insert logic to avoid conflicts)
   if (userId) {
-    const { error: deleteError } = await supabase
+    // A. Check if subscription exists
+    const { data: existingSubs } = await supabase
       .from('push_subscriptions')
-      .delete()
-      .eq('user_id', userId);
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    const existingId = existingSubs && existingSubs.length > 0 ? existingSubs[0].id : null;
+
+    let error = null;
+
+    if (existingId) {
+      // B. Update existing
+      console.log('Mise à jour de l\'abonnement existant...');
+      const { error: updateError } = await supabase
+        .from('push_subscriptions')
+        .update({
+          endpoint: endpoint,
+          p256dh: subscriptionJson.keys.p256dh,
+          auth: subscriptionJson.keys.auth
+        })
+        .eq('id', existingId);
+      error = updateError;
+    } else {
+      // C. Insert new
+      console.log('Création d\'un nouvel abonnement...');
+      const { error: insertError } = await supabase
+        .from('push_subscriptions')
+        .insert({
+          user_id: userId,
+          endpoint: endpoint,
+          p256dh: subscriptionJson.keys.p256dh,
+          auth: subscriptionJson.keys.auth
+        });
+      error = insertError;
+    }
+
+    if (error) {
+      console.error('Error saving subscription to Supabase:', error);
       
-    if (deleteError) {
-      console.warn("Erreur lors du nettoyage de l'ancien abonnement (peut être ignoré):", deleteError);
+      // If RLS prevents update/insert
+      if (error.code === '42501' || error.message.includes('row-level security')) {
+        throw new Error("Accès refusé (RLS). Vérifiez que vous avez les droits d'écriture sur la table.");
+      }
+      
+      throw new Error("Erreur de sauvegarde base de données: " + error.message);
     }
-  }
-
-  const { error } = await supabase
-    .from('push_subscriptions')
-    .insert({
-      user_id: userId,
-      endpoint: endpoint,
-      p256dh: subscriptionJson.keys.p256dh,
-      auth: subscriptionJson.keys.auth
-    });
-
-  if (error) {
-    console.error('Error saving subscription to Supabase:', error);
-    
-    if (error.code === '42501' || error.message.includes('row-level security')) {
-      throw new Error("Accès refusé par la base de données (RLS). Vérifiez les politiques.");
-    }
-    
-    // Si c'est encore une duplication (race condition), on considère que c'est OK
-    if (error.code === '23505') {
-       console.log("Abonnement déjà existant (race condition), succès implicite.");
-       return subscription;
-    }
-
-    throw new Error("Erreur de sauvegarde base de données: " + error.message);
   }
 
   console.log('Successfully subscribed to push notifications!');

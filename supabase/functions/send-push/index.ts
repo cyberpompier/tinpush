@@ -11,42 +11,43 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Gestion du preflight CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     const { user_id, title, body, url } = await req.json()
+    console.log(`Sending push to user: ${user_id}`);
 
-    // 1. Initialisation de Supabase avec la clé Service Role (Admin)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 2. Configuration de Web Push
     webpush.setVapidDetails(
       'mailto:admin@aura-app.com',
       Deno.env.get('VAPID_PUBLIC_KEY') ?? '',
       Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
     )
 
-    // 3. Récupération des abonnements de l'utilisateur
     const { data: subscriptions, error: dbError } = await supabaseAdmin
       .from('push_subscriptions')
       .select('*')
       .eq('user_id', user_id)
 
-    if (dbError) throw new Error(dbError.message)
+    if (dbError) {
+      console.error("DB Error:", dbError);
+      throw new Error(dbError.message)
+    }
+
     if (!subscriptions || subscriptions.length === 0) {
+      console.log("No subscriptions found.");
       return new Response(JSON.stringify({ message: 'No subscriptions found for user' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
     }
 
-    // 4. Envoi de la notification
     const notificationPayload = JSON.stringify({
       title: title || 'Aura',
       body: body || 'Vous avez une nouvelle notification !',
@@ -56,14 +57,14 @@ serve(async (req) => {
 
     const results = await Promise.all(subscriptions.map(async (sub) => {
       try {
-        // Validation stricte des données
-        if (!sub.endpoint || typeof sub.endpoint !== 'string' || sub.endpoint.trim() === '') {
-          console.warn(`Abonnement ${sub.id} invalide : endpoint manquant ou invalide`);
-          return { success: false, id: sub.id, error: 'Invalid endpoint' };
+        // Deep Validation
+        if (!sub.endpoint || typeof sub.endpoint !== 'string' || sub.endpoint.trim().length === 0) {
+          console.error(`Invalid endpoint for sub ${sub.id}:`, sub.endpoint);
+          return { success: false, id: sub.id, error: 'Invalid endpoint format' };
         }
         
         if (!sub.p256dh || !sub.auth) {
-          console.warn(`Abonnement ${sub.id} invalide : clés manquantes`);
+          console.error(`Missing keys for sub ${sub.id}`);
           return { success: false, id: sub.id, error: 'Missing keys' };
         }
 
@@ -74,20 +75,21 @@ serve(async (req) => {
             auth: sub.auth.trim(),
           },
         };
-        
+
+        // Attempt Send
         await webpush.sendNotification(pushSubscription, notificationPayload);
         return { success: true, id: sub.id };
-        
+
       } catch (error: any) {
-        // Gestion spécifique des erreurs 410 (Gone) et 404 (Not Found) -> Suppression de la DB
+        // Handle Gone/Expired
         if (error.statusCode === 410 || error.statusCode === 404) {
-          console.log(`Suppression de l'abonnement expiré : ${sub.id}`);
+          console.log(`Cleaning up expired subscription: ${sub.id}`);
           await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
           return { success: false, id: sub.id, error: 'Expired subscription removed' };
         }
         
-        console.error(`Erreur d'envoi pour ${sub.id}:`, error);
-        return { success: false, id: sub.id, error: error.message || 'Unknown send error' };
+        console.error(`WebPush Error for ${sub.id}:`, error);
+        return { success: false, id: sub.id, error: error.message || 'Unknown WebPush error' };
       }
     }));
 
@@ -97,7 +99,7 @@ serve(async (req) => {
     })
 
   } catch (error: any) {
-    console.error('Global error in send-push:', error)
+    console.error('Global Handler Error:', error)
     return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
