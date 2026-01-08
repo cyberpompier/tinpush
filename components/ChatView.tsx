@@ -37,67 +37,81 @@ const ChatView: React.FC<ChatViewProps> = ({ chat, onBack, onSendMessage }) => {
     setLoadingIceBreakers(false);
   };
 
+  const formatTime = (date: Date) => {
+    return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
-    <div className="h-full flex flex-col bg-slate-50 animate-slideInRight">
+    <div className="h-full flex flex-col bg-white animate-slideInRight z-50 fixed inset-0">
       {/* Header */}
-      <div className={`bg-white px-4 py-3 flex items-center gap-4 border-b ${chat.isSuperLike ? 'border-b-indigo-100 shadow-sm' : ''}`}>
-        <button onClick={onBack} className="text-slate-400 hover:text-slate-600">
-          <i className="fas fa-chevron-left text-xl"></i>
+      <div className="bg-white/90 backdrop-blur-md px-4 py-3 flex items-center gap-3 border-b border-slate-100 shadow-sm sticky top-0 z-10">
+        <button onClick={onBack} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors">
+          <i className="fas fa-chevron-left text-lg"></i>
         </button>
-        <div className="flex items-center justify-between flex-1">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <img src={chat.user.images[0]} alt={chat.user.name} className={`w-10 h-10 rounded-full object-cover border ${chat.isSuperLike ? 'border-indigo-300' : 'border-slate-100'}`} />
-              {chat.isSuperLike && (
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-indigo-500 text-white rounded-full flex items-center justify-center text-[6px] border border-white">
-                  <i className="fas fa-star"></i>
-                </div>
-              )}
-            </div>
-            <div>
-              <h3 className={`font-bold leading-none mb-1 ${chat.isSuperLike ? 'text-indigo-900' : 'text-slate-800'}`}>{chat.user.name}</h3>
-              <span className="text-[10px] text-green-500 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> En ligne
-              </span>
-            </div>
+        
+        <div className="flex items-center gap-3 flex-1 overflow-hidden">
+          <div className="relative">
+            <img 
+              src={chat.user.images[0]} 
+              alt={chat.user.name} 
+              className={`w-10 h-10 rounded-full object-cover border-2 ${chat.isSuperLike ? 'border-indigo-400 p-0.5' : 'border-rose-100'}`} 
+            />
+            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
-          {chat.isSuperLike && (
-            <div className="bg-indigo-50 text-indigo-600 text-[8px] font-black uppercase px-2 py-1 rounded-full border border-indigo-100 animate-pulse">
-              Super Match
-            </div>
-          )}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-slate-800 text-base leading-none mb-1 truncate flex items-center gap-1">
+              {chat.user.name}
+              {chat.isSuperLike && <i className="fas fa-star text-indigo-500 text-[10px]"></i>}
+            </h3>
+            <p className="text-xs text-slate-400 truncate">En ligne il y a 5 min</p>
+          </div>
         </div>
+
+        <button className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-500 rounded-full transition-colors">
+          <i className="fas fa-shield-alt"></i>
+        </button>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Messages Area */}
+      <div 
+        ref={scrollRef} 
+        className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-50"
+      >
+        {/* Match Started Notice */}
+        <div className="text-center py-6">
+           <div className="w-20 h-20 rounded-full overflow-hidden mx-auto border-4 border-white shadow-lg mb-3">
+             <img src={chat.user.images[0]} className="w-full h-full object-cover" alt="" />
+           </div>
+           <p className="text-xs text-slate-400">
+             Vous avez matché avec <span className="font-bold text-slate-700">{chat.user.name}</span>.<br/>
+             {chat.user.interests.slice(0, 2).join(' • ')}
+           </p>
+        </div>
+
         {chat.messages.length === 0 && (
-          <div className="text-center py-8">
-             <p className={`text-sm mb-4 italic ${chat.isSuperLike ? 'text-indigo-400 font-medium' : 'text-slate-400'}`}>
-               {chat.isSuperLike ? `Tu as envoyé un Super Like à ${chat.user.name} ! C'est le moment d'impressionner.` : "Vous avez matché ! C'est le moment idéal pour envoyer un message."}
-             </p>
+          <div className="animate-fadeIn space-y-4">
              {!showIceBreakers ? (
                <button 
                  onClick={getIceBreakers}
                  disabled={loadingIceBreakers}
-                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center gap-2 mx-auto ${chat.isSuperLike ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200' : 'bg-rose-100 text-rose-600 hover:bg-rose-200'}`}
+                 className="w-full max-w-xs mx-auto p-4 rounded-2xl bg-white border border-rose-100 shadow-sm text-center group hover:border-rose-300 transition-all active:scale-95"
                >
-                 {loadingIceBreakers ? (
-                    <i className="fas fa-spinner fa-spin"></i>
-                 ) : (
-                    <i className="fas fa-wand-magic-sparkles"></i>
-                 )}
-                 Besoin d'une phrase d'accroche ?
+                 <div className="w-12 h-12 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-3 text-rose-500 group-hover:scale-110 transition-transform">
+                   {loadingIceBreakers ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-magic"></i>}
+                 </div>
+                 <h4 className="font-bold text-slate-800 text-sm mb-1">Brisez la glace !</h4>
+                 <p className="text-xs text-slate-500">Demandez à l'IA une phrase d'accroche originale pour {chat.user.name}.</p>
                </button>
              ) : (
-               <div className="space-y-2 max-w-xs mx-auto">
+               <div className="max-w-xs mx-auto space-y-2 animate-fadeIn">
+                 <p className="text-center text-xs text-slate-400 font-bold uppercase tracking-widest mb-3">Suggestions Aura</p>
                  {iceBreakers.map((ib, i) => (
                    <button 
                      key={i} 
                      onClick={() => { setInputText(ib); setShowIceBreakers(false); }}
-                     className={`block w-full text-left p-3 rounded-2xl bg-white border text-xs transition-colors shadow-sm ${chat.isSuperLike ? 'border-indigo-100 hover:border-indigo-400 text-indigo-900' : 'border-rose-100 hover:border-rose-400 text-slate-700'}`}
+                     className="block w-full text-left p-3.5 rounded-2xl bg-white border border-slate-100 text-sm text-slate-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition-all shadow-sm"
                    >
-                     {ib}
+                     "{ib}"
                    </button>
                  ))}
                </div>
@@ -105,26 +119,42 @@ const ChatView: React.FC<ChatViewProps> = ({ chat, onBack, onSendMessage }) => {
           </div>
         )}
 
-        {chat.messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.senderId === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[75%] p-3 rounded-2xl text-sm ${
-              msg.senderId === 'user' 
-                ? `${chat.isSuperLike ? 'bg-indigo-600 shadow-indigo-100' : 'bg-rose-500 shadow-rose-100'} text-white rounded-br-none shadow-md` 
-                : 'bg-white text-slate-800 shadow-sm border border-slate-100 rounded-bl-none'
-            }`}>
-              {msg.text}
-            </div>
-          </div>
-        ))}
+        {/* Message List */}
+        <div className="space-y-1.5">
+          {chat.messages.map((msg, idx) => {
+            const isMe = msg.senderId === chat.user.id ? false : true; // Assuming 'user' was hardcoded previously, logic might need check based on auth ID
+            // For mock purposes: if senderId is NOT the profile ID, it's Me.
+            const isSelf = msg.senderId !== chat.user.id;
+            
+            return (
+              <div key={msg.id} className={`flex w-full ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                <div className={`flex max-w-[80%] flex-col ${isSelf ? 'items-end' : 'items-start'}`}>
+                  <div 
+                    className={`px-4 py-2.5 shadow-sm text-[15px] leading-relaxed break-words ${
+                      isSelf 
+                        ? 'bg-rose-500 text-white rounded-2xl rounded-tr-sm' 
+                        : 'bg-white text-slate-800 border border-slate-100 rounded-2xl rounded-tl-sm'
+                    }`}
+                  >
+                    {msg.text}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 px-1">
+                    {formatTime(msg.timestamp)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Input */}
-      <div className="p-4 bg-white border-t">
-        <div className={`flex items-center gap-3 rounded-full px-4 py-2 ${chat.isSuperLike ? 'bg-indigo-50 border border-indigo-100' : 'bg-slate-100'}`}>
+      {/* Input Area */}
+      <div className="p-3 bg-white border-t border-slate-100 sticky bottom-0">
+        <div className="flex items-end gap-2 bg-slate-100 rounded-[1.5rem] p-1.5 pl-4 transition-all focus-within:ring-2 focus-within:ring-rose-100 focus-within:bg-white border border-transparent focus-within:border-rose-200">
           <input 
             type="text" 
-            placeholder="Tapez votre message..." 
-            className="flex-1 bg-transparent outline-none text-sm py-1"
+            placeholder="Écrivez un message..." 
+            className="flex-1 bg-transparent outline-none text-sm py-2.5 max-h-32 resize-none text-slate-800 placeholder:text-slate-400"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
@@ -132,13 +162,13 @@ const ChatView: React.FC<ChatViewProps> = ({ chat, onBack, onSendMessage }) => {
           <button 
             onClick={handleSend}
             disabled={!inputText.trim()}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-md ${
               inputText.trim() 
-                ? (chat.isSuperLike ? 'bg-indigo-600 text-white scale-110 shadow-lg' : 'bg-rose-500 text-white scale-110 shadow-lg') 
-                : 'text-slate-400'
+                ? 'bg-rose-500 text-white hover:scale-105 active:scale-90' 
+                : 'bg-slate-200 text-slate-400'
             }`}
           >
-            <i className="fas fa-paper-plane text-sm"></i>
+            <i className="fas fa-paper-plane text-sm translate-x-[-1px] translate-y-[1px]"></i>
           </button>
         </div>
       </div>
