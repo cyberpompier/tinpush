@@ -1,7 +1,8 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import webpush from "npm:web-push"
+
+declare const Deno: any;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,18 +19,16 @@ serve(async (req) => {
     const { user_id, title, body, url } = await req.json()
 
     // 1. Initialisation de Supabase avec la clé Service Role (Admin)
-    // Cela permet de lire la table push_subscriptions même si RLS est actif
     const supabaseAdmin = createClient(
-      (Deno as any).env.get('SUPABASE_URL') ?? '',
-      (Deno as any).env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     // 2. Configuration de Web Push
-    // L'email mailto est obligatoire pour le protocole
     webpush.setVapidDetails(
       'mailto:admin@aura-app.com',
-      (Deno as any).env.get('VAPID_PUBLIC_KEY') ?? '',
-      (Deno as any).env.get('VAPID_PRIVATE_KEY') ?? ''
+      Deno.env.get('VAPID_PUBLIC_KEY') ?? '',
+      Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
     )
 
     // 3. Récupération des abonnements de l'utilisateur
@@ -46,7 +45,7 @@ serve(async (req) => {
       })
     }
 
-    // 4. Envoi de la notification à tous les appareils de l'utilisateur
+    // 4. Envoi de la notification
     const notificationPayload = JSON.stringify({
       title: title || 'Aura',
       body: body || 'Vous avez une nouvelle notification !',
@@ -55,6 +54,12 @@ serve(async (req) => {
     })
 
     const promises = subscriptions.map(async (sub) => {
+      // VÉRIFICATION CRITIQUE : Si l'endpoint ou les clés sont manquants, on ignore cet abonnement
+      if (!sub.endpoint || !sub.p256dh || !sub.auth) {
+        console.warn(`Abonnement invalide ignoré (ID: ${sub.id})`)
+        return { success: false, id: sub.id, error: 'Missing endpoint or keys' }
+      }
+
       try {
         const pushSubscription = {
           endpoint: sub.endpoint,

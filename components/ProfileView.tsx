@@ -167,10 +167,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({ profile, setProfile }) => {
       if (error) throw error;
       
       console.log("Résultat serveur:", data);
-      alert("Envoyé au serveur ! Si vous êtes abonné, vous devriez la recevoir dans quelques secondes.");
+      
+      if (data && data.error) {
+        alert(`Erreur renvoyée par le serveur: ${data.error}`);
+      } else {
+        alert("Envoyé au serveur ! Si vous êtes abonné, vous devriez la recevoir dans quelques secondes.");
+      }
     } catch (e: any) {
-      console.error("Erreur serveur:", e);
-      alert(`Erreur serveur: ${e.message || 'Impossible de joindre la fonction Edge'}`);
+      console.error("Erreur appel fonction:", e);
+      alert(`Erreur d'appel: ${e.message || 'Impossible de joindre la fonction Edge'}`);
     } finally {
       setIsSending(false);
     }

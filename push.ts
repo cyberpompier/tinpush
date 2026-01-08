@@ -75,8 +75,12 @@ export async function subscribeToPushNotifications() {
   // 6. Prepare data for Supabase
   const subscriptionJson = subscription.toJSON();
   
-  if (!subscriptionJson.keys || !subscriptionJson.keys.p256dh || !subscriptionJson.keys.auth) {
-    throw new Error('Échec de la génération des clés de chiffrement Push.');
+  // Correction: On s'assure d'avoir l'endpoint, soit depuis le JSON, soit depuis l'objet direct
+  const endpoint = subscriptionJson.endpoint || subscription.endpoint;
+
+  if (!endpoint || !subscriptionJson.keys || !subscriptionJson.keys.p256dh || !subscriptionJson.keys.auth) {
+    console.error("Subscription Data Incomplete:", subscriptionJson);
+    throw new Error('Échec de la génération des clés de chiffrement Push (Endpoint ou clés manquants).');
   }
 
   // 7. Validate and prepare User ID
@@ -104,7 +108,7 @@ export async function subscribeToPushNotifications() {
     .from('push_subscriptions')
     .insert({
       user_id: userId,
-      endpoint: subscription.endpoint,
+      endpoint: endpoint,
       p256dh: subscriptionJson.keys.p256dh,
       auth: subscriptionJson.keys.auth
     });
