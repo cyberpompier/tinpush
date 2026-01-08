@@ -1,9 +1,19 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import webpush from "npm:web-push@3.6.7"
+import _webpush from "npm:web-push@3.6.7"
 
-declare const Deno: any;
+// Declare Deno for TS compilers that don't include Deno types
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+};
+
+// FIX CRITIQUE: Gestion de la compatibilité des imports CommonJS/ESM dans Deno
+// Cela assure que 'webpush' pointe bien vers l'objet contenant les méthodes,
+// peu importe comment Deno résout le module npm.
+const webpush = _webpush.default || _webpush;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,21 +21,22 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Gestion CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     const { user_id, title, body, url } = await req.json()
-    console.log(`[Push] Request for user: ${user_id}`);
+    console.log(`[Push] Starting push for user: ${user_id}`);
 
-    // Verification critique de la librairie
+    // Verification que la librairie est bien chargée et fonctionnelle
     if (!webpush || typeof webpush.sendNotification !== 'function') {
-      console.error("[Push] FATAL: web-push library not loaded correctly", webpush);
-      throw new Error("Server Error: web-push library failed to load.");
+      console.error("[Push] FATAL: web-push library structure invalid", webpush);
+      throw new Error("Server Error: web-push library failed to load properly.");
     }
 
-    // 1. Validation UUID
+    // 1. Validation de l'ID utilisateur
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!user_id || !uuidRegex.test(user_id)) {
       return new Response(JSON.stringify({ error: `Invalid user_id format.` }), {
@@ -34,41 +45,38 @@ serve(async (req) => {
       });
     }
 
-    // 2. Init Supabase
+    // 2. Initialisation Supabase Admin
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 3. Init WebPush
+    // 3. Configuration VAPID
     try {
       const publicKey = Deno.env.get('VAPID_PUBLIC_KEY');
       const privateKey = Deno.env.get('VAPID_PRIVATE_KEY');
+      const subject = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@aura-app.com';
       
       if (!publicKey || !privateKey) {
-        throw new Error("Missing VAPID env vars");
+        throw new Error("VAPID keys missing in environment variables.");
       }
 
-      webpush.setVapidDetails(
-        'mailto:admin@aura-app.com',
-        publicKey,
-        privateKey
-      );
+      webpush.setVapidDetails(subject, publicKey, privateKey);
     } catch (e: any) {
       console.error("[Push] VAPID Config Error:", e);
-      throw new Error("Server misconfiguration: VAPID keys invalid.");
+      throw new Error("Server misconfiguration: VAPID setup failed.");
     }
 
-    // 4. Fetch Subscriptions
+    // 4. Récupération des souscriptions
     const { data: subscriptions, error: dbError } = await supabaseAdmin
       .from('push_subscriptions')
       .select('*')
       .eq('user_id', user_id)
 
-    if (dbError) throw new Error(`DB Error: ${dbError.message}`)
+    if (dbError) throw new Error(`Database Error: ${dbError.message}`)
 
     if (!subscriptions || subscriptions.length === 0) {
-      console.log("[Push] No subscriptions found.");
+      console.log("[Push] No subscriptions found for user.");
       return new Response(JSON.stringify({ message: 'No subscriptions found', count: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -83,37 +91,36 @@ serve(async (req) => {
     });
 
     const results = [];
+    let successCount = 0;
 
-    // 5. Loop Sequential
+    // 5. Envoi des notifications
     for (const sub of subscriptions) {
       try {
-        console.log(`[Push] Processing Sub ID: ${sub.id}`);
-        
-        // Extraction robuste (gère les cas NULL ou les schémas mixtes)
+        // Extraction et nettoyage des données
         let endpoint = (sub.endpoint || "").trim();
         let p256dh = (sub.p256dh || "").trim();
         let auth = (sub.auth || "").trim();
         
-        // Support legacy: si p256dh est vide, vérifier si c'est dans une colonne JSON 'keys'
-        if (!p256dh && sub.keys && typeof sub.keys === 'object') {
+        // Support pour l'ancien format (JSON column 'keys') si les colonnes directes sont vides
+        if ((!p256dh || !auth) && sub.keys && typeof sub.keys === 'object') {
              p256dh = (sub.keys.p256dh || "").trim();
              auth = (sub.keys.auth || "").trim();
         }
 
-        // Vérification stricte AVANT appel librairie
+        // Validation stricte des champs requis par web-push AVANT de construire l'objet
         if (!endpoint) {
-          console.warn(`[Push] Skipping ${sub.id}: Empty endpoint`);
-          results.push({ success: false, id: sub.id, error: 'Empty endpoint' });
+          console.warn(`[Push] Skipping sub ${sub.id}: No endpoint found`);
+          results.push({ success: false, id: sub.id, error: 'Missing endpoint' });
           continue;
         }
 
         if (!p256dh || !auth) {
-           console.warn(`[Push] Skipping ${sub.id}: Missing keys`);
+           console.warn(`[Push] Skipping sub ${sub.id}: Missing keys (p256dh or auth)`);
            results.push({ success: false, id: sub.id, error: 'Missing keys' });
            continue;
         }
 
-        // Construction objet conforme
+        // Construction de l'objet de souscription STRICTEMENT conforme à l'interface PushSubscription
         const pushSubscription = {
           endpoint: endpoint,
           keys: {
@@ -122,14 +129,17 @@ serve(async (req) => {
           }
         };
 
-        // Envoi
+        // Envoi via web-push
         await webpush.sendNotification(pushSubscription, notificationPayload);
+        
+        console.log(`[Push] Sent successfully to ${sub.id}`);
         results.push({ success: true, id: sub.id });
+        successCount++;
 
       } catch (error: any) {
-        console.error(`[Push] Error sending to ${sub.id}:`, error.message);
+        console.error(`[Push] Failed to send to ${sub.id}:`, error.message);
         
-        // Nettoyage automatique si expiré
+        // Gestion des souscriptions expirées (410 Gone / 404 Not Found)
         if (error.statusCode === 410 || error.statusCode === 404) {
           console.log(`[Push] Removing expired subscription ${sub.id}`);
           await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
@@ -140,16 +150,21 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ success: true, results }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      sent: successCount, 
+      total: subscriptions.length,
+      results 
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
 
   } catch (error: any) {
-    console.error('[Push] Global Error Stack:', error.stack || error);
+    console.error('[Push] Handler Error:', error);
     return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+      status: 400, // Bad Request pour que le client voie l'erreur
     })
   }
 })
